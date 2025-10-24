@@ -10,10 +10,6 @@ __pycache__/
 venv/
 .env/
 
-# Screenshots
-assets/
-*.png
-
 # Streamlit cache
 .streamlit/
 
