@@ -12,6 +12,12 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
+    # Defensive: drop columns that are likely to leak the target (e.g., satisfaction surveys)
+    leak_candidates = [c for c in df.columns if 'satisfaction' in c.lower()]
+    if leak_candidates:
+        # remove from the feature pipeline
+        df = df.drop(columns=leak_candidates, errors='ignore')
+
     # Tenure bucket
     if "Tenure in Months" in df.columns:
         try:

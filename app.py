@@ -8,7 +8,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from src.data import load_raw, basic_clean
-from src.predict import score_dataframe, load_model
+from src.predict import score_dataframe, load_model, make_arrow_compatible
 from sklearn.metrics import confusion_matrix
 import warnings
 warnings.filterwarnings('ignore')
@@ -30,7 +30,7 @@ st.markdown("""
         color: #1f77b4;
         text-align: center;
         padding: 1rem 0;
-        border-bottom: 3px solid #e0e0e0;
+        border-bottom: 3px solid rgba(128, 128, 128, 0.3);
         margin-bottom: 2rem;
     }
     .metric-card {
@@ -42,15 +42,18 @@ st.markdown("""
         margin: 0.5rem 0;
     }
     .insight-box {
-        background-color: #f8f9fa;
+        background-color: rgba(128, 128, 128, 0.1);
         border-left: 4px solid #1f77b4;
         padding: 1rem;
         margin: 1rem 0;
         border-radius: 5px;
     }
-    .risk-high { color: #d32f2f; font-weight: bold; }
-    .risk-medium { color: #f57c00; font-weight: bold; }
-    .risk-low { color: #388e3c; font-weight: bold; }
+    .insight-box h3 {
+        margin-top: 0;
+    }
+    .risk-high { color: #ef5350; font-weight: bold; }
+    .risk-medium { color: #ff9800; font-weight: bold; }
+    .risk-low { color: #66bb6a; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -58,85 +61,85 @@ st.markdown("""
 st.markdown('<div class="main-header">Telco Customer Churn Analytics Dashboard</div>', unsafe_allow_html=True)
 
 # Load and prepare data
-@st.cache_data
-def load_and_process_data(uploaded_file=None):
-    """Load, clean and score data with caching for performance"""
+@st.cache_resource
+def get_model(path: str = None):
+    """Load model (cached per session)."""
+    try:
+        return load_model(path)
+    except Exception as e:
+        st.error(f"Failed to load model: {e}")
+        return None
+
+def load_and_process_data(model, uploaded_file=None):
+    """Load, clean, and score data (no caching)."""
     try:
         if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
         else:
             df = load_raw()
-        
         df_clean = basic_clean(df)
-        model = load_model()
+        if model is None:
+            st.error("No model available.")
+            return None
         scored = score_dataframe(df_clean, model=model)
-        return scored, model
+        return scored
     except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        return None, None
+        st.error(f"Error loading or processing data: {str(e)}")
+        return None
 
-# Sidebar
+
+# Sidebar controls
 st.sidebar.header("🔧 Dashboard Controls")
+
 uploaded_file = st.sidebar.file_uploader(
     "Upload your telco dataset (CSV)", 
     type=['csv'],
     help="Upload a CSV file with customer data to analyze churn patterns"
 )
 
-# Load data
+# Reset filters button
+if st.sidebar.button("🔄 Reset Filters"):
+    st.rerun()
+
+model = get_model()
 with st.spinner("🔄 Loading and processing data..."):
-    data, model = load_and_process_data(uploaded_file)
+    data = load_and_process_data(model, uploaded_file)
 
 if data is None:
+    st.error("Model or data could not be loaded. Check your model path or input file.")
     st.stop()
 
 # Sidebar filters
 st.sidebar.subheader("🔍 Data Filters")
+data['risk_label'] = data['risk_label'].astype(str).str.strip().str.lower()
+risk_options = sorted(data['risk_label'].dropna().unique())
 
-# Risk filter
 risk_filter = st.sidebar.multiselect(
     "Risk Level",
-    options=['low', 'medium', 'high'],
-    default=['low', 'medium', 'high']
+    options=risk_options,
+    default=risk_options
 )
 
-# Contract filter options, fallback empty list if no column
 contract_options = sorted(data['Contract'].dropna().unique()) if 'Contract' in data.columns else []
-
 contract_filter = st.sidebar.multiselect(
     "Contract Type",
     options=contract_options,
     default=contract_options
 ) if contract_options else []
 
-# Internet Service filter
 if 'Internet Type' in data.columns:
-    data['Internet Type'] = data['Internet Type'].astype(str).str.strip()
-    data['Internet Type'] = data['Internet Type'].replace({'': 'No Internet', 'nan': 'No Internet', 'NaN': 'No Internet'})
+    data['Internet Type'] = data['Internet Type'].astype(str).str.strip().replace({'': 'No Internet', 'nan': 'No Internet'})
     internet_service_options = sorted(data['Internet Type'].unique())
-
-    selected_internet = st.sidebar.selectbox(
-        "Internet Service Type:",
-        options=["All"] + internet_service_options,
-        index=0
-    )
+    selected_internet = st.sidebar.selectbox("Internet Service Type:", ["All"] + internet_service_options, index=0)
 else:
     selected_internet = "All"
 
-# Now filter your data once upfront
 filtered_data = data.copy()
-
-# Apply risk filter
 filtered_data = filtered_data[filtered_data['risk_label'].isin(risk_filter)]
-
-# Apply contract filter if applicable and selected
 if contract_options:
     filtered_data = filtered_data[filtered_data['Contract'].isin(contract_filter)]
-
-# Apply internet filter if applicable and selected
 if selected_internet != "All":
     filtered_data = filtered_data[filtered_data['Internet Type'] == selected_internet]
-
 
 st.sidebar.subheader("📈 Dataset Info")
 st.sidebar.info(f"""
@@ -144,6 +147,10 @@ st.sidebar.info(f"""
 **Filtered View:** {len(filtered_data):,}  
 **Features:** {len([col for col in data.columns if col not in ['pred_prob', 'risk_label']])}
 """)
+
+# Standardized Plotly colors
+COLOR_MAP = {'low': '#2e7d32', 'medium': '#f57c00', 'high': '#c62828'}
+PLOT_COLORS = px.colors.qualitative.Safe
 
 # Main dashboard layout
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -154,6 +161,9 @@ high_risk_customers = len(data[data['risk_label'] == 'high'])
 churn_rate = None
 avg_monthly_revenue = None
 revenue_at_risk = None
+avg_tenure = None
+customer_lifetime_value = None
+actual_churn_available = False
 
 # Calculate actual churn rate if available
 if 'Churn Label' in data.columns:
@@ -299,7 +309,7 @@ with tab1:
         display_df = display_df.drop('pred_prob', axis=1)
     
     st.dataframe(
-        display_df,
+        make_arrow_compatible(display_df),
         use_container_width=True,
         hide_index=True
     )
@@ -601,7 +611,7 @@ with tab4:
                         'Overall discrimination ability'
                     ]
                 })
-                st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+                st.dataframe(make_arrow_compatible(metrics_df), use_container_width=True, hide_index=True)
             except Exception as e:
                 st.error(f"Error calculating performance metrics: {str(e)}")
         else:
@@ -621,7 +631,7 @@ with tab4:
             'Min Probability': filtered_data['pred_prob'].min()
         }
         pred_df = pd.DataFrame(list(pred_stats.items()), columns=['Metric', 'Value'])
-        st.dataframe(pred_df, use_container_width=True, hide_index=True)
+        st.dataframe(make_arrow_compatible(pred_df), use_container_width=True, hide_index=True)
     with col2:
         if hasattr(model, 'feature_importances_') and hasattr(model, 'feature_names_in_'):
             feature_names = list(model.feature_names_in_)
@@ -629,13 +639,22 @@ with tab4:
                 'feature': feature_names,
                 'importance': model.feature_importances_
             }).sort_values('importance', ascending=False).head(8)
+        elif hasattr(model, 'coef_') and hasattr(model, 'feature_names_in_'):
+            feature_names = list(model.feature_names_in_)
+            importance_df = pd.DataFrame({
+                'feature': feature_names,
+                'importance': np.abs(model.coef_[0])
+            }).sort_values('importance', ascending=False).head(8)
+        else:
+            importance_df = None
+
+        if importance_df is not None:
             fig_importance = px.bar(
                 importance_df,
                 x='importance',
                 y='feature',
                 orientation='h',
                 title='Top Feature Importance',
-                labels={'importance': 'Feature Importance', 'feature': 'Features'},
                 color='importance',
                 color_continuous_scale='viridis'
             )
@@ -648,7 +667,7 @@ with tab4:
                 'Prediction Range': f"{filtered_data['pred_prob'].min():.3f} - {filtered_data['pred_prob'].max():.3f}"
             }
             model_df = pd.DataFrame(list(model_info.items()), columns=['Property', 'Value'])
-            st.dataframe(model_df, use_container_width=True, hide_index=True)
+            st.dataframe(make_arrow_compatible(model_df), use_container_width=True, hide_index=True)
 
 with tab5:
     st.header("💡 Business Recommendations")
@@ -671,15 +690,18 @@ with tab5:
             </ul>
         </div>
         """, unsafe_allow_html=True)
-        if revenue_at_risk > 0:
-            st.markdown(f"""
-            <div class="insight-box">
-                <h3>💰 Financial Impact</h3>
-                <p><strong>Monthly Revenue at Risk:</strong> ${revenue_at_risk:,.0f}</p>
-                <p><strong>Annual Impact:</strong> ${revenue_at_risk * 12:,.0f}</p>
-                <p><strong>Retention Investment Justification:</strong> Up to ${revenue_at_risk * 0.2:,.0f}/month</p>
-            </div>
-            """, unsafe_allow_html=True)
+        # Financial Impact box (always render with fallbacks)
+        fin_monthly = f"${revenue_at_risk:,.0f}" if revenue_at_risk and revenue_at_risk > 0 else "N/A"
+        fin_annual = f"${revenue_at_risk * 12:,.0f}" if revenue_at_risk and revenue_at_risk > 0 else "N/A"
+        fin_just = f"${revenue_at_risk * 0.2:,.0f}/month" if revenue_at_risk and revenue_at_risk > 0 else "N/A"
+        st.markdown(f"""
+        <div class="insight-box">
+            <h3>💰 Financial Impact</h3>
+            <p><strong>Monthly Revenue at Risk:</strong> {fin_monthly}</p>
+            <p><strong>Annual Impact:</strong> {fin_annual}</p>
+            <p><strong>Retention Investment Justification:</strong> {fin_just}</p>
+        </div>
+        """, unsafe_allow_html=True)
     with col2:
         st.markdown(f"""
         <div class="insight-box">
@@ -692,18 +714,40 @@ with tab5:
             </ul>
         </div>
         """, unsafe_allow_html=True)
-        if hasattr(model, 'feature_importances_') and hasattr(model, 'feature_names_in_'):
-            top_features = pd.Series(
-                model.feature_importances_, 
-                index=model.feature_names_in_
-            ).nlargest(5)
-            st.markdown("""
-            <div class="insight-box">
-                <h3>🔍 Top Risk Factors</h3>
-            """, unsafe_allow_html=True)
-            for feature, importance in top_features.items():
-                st.write(f"• **{feature}**: {importance:.3f} importance")
-            st.markdown("</div>", unsafe_allow_html=True)
+        # Top Risk Factors: show feature_importances_ or aggregated coef_ or a helpful fallback
+        try:
+            items_html = ""
+            if hasattr(model, 'feature_importances_') and hasattr(model, 'feature_names_in_'):
+                top_features = pd.Series(
+                    model.feature_importances_, 
+                    index=model.feature_names_in_
+                ).nlargest(5)
+                for feature, importance in top_features.items():
+                    items_html += f"<li><strong>{feature}</strong>: {importance:.3f} importance</li>"
+            elif hasattr(model, 'coef_') and hasattr(model, 'feature_names_in_'):
+                # handle multiclass by aggregating absolute coefficients across classes
+                coef = np.array(model.coef_)
+                if coef.ndim == 1:
+                    agg = np.abs(coef)
+                else:
+                    agg = np.abs(coef).mean(axis=0)
+                top_features = pd.Series(agg, index=model.feature_names_in_).nlargest(5)
+                for feature, importance in top_features.items():
+                    items_html += f"<li><strong>{feature}</strong>: {importance:.3f} (avg abs coef)</li>"
+            else:
+                items_html = "<li>No model importances available. Ensure a trained model with feature metadata is present.</li>"
+        except Exception as e:
+            items_html = f"<li>Could not compute top risk factors: {e}</li>"
+
+        st.markdown(f"""
+        <div class="insight-box">
+            <h3>🔍 Top Risk Factors</h3>
+            <ul>
+        {items_html}
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
     st.subheader("📋 Recommended Action Plan")
     action_plan = pd.DataFrame({
         'Priority': ['High', 'High', 'Medium', 'Medium', 'Low'],
@@ -717,7 +761,7 @@ with tab5:
         'Timeline': ['48 hours', '1 week', '2 weeks', '1 month', 'Ongoing'],
         'Owner': ['Sales Team', 'Marketing', 'Sales Team', 'Customer Success', 'Data Team']
     })
-    st.dataframe(action_plan, use_container_width=True, hide_index=True)
+    st.dataframe(make_arrow_compatible(action_plan), use_container_width=True, hide_index=True)
 
 # Footer
 st.markdown("---")

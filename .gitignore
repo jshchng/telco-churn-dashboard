@@ -10,15 +10,9 @@ __pycache__/
 venv/
 .env/
 
-# Data files
-data/raw/
-data/processed/
-*.csv
-
-# Model files
-models/
-*.joblib
-*.pkl
+# Screenshots
+assets/
+*.png
 
 # Streamlit cache
 .streamlit/
