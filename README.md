@@ -1,16 +1,16 @@
-# Telco Customer Churn Analytics Dashboard
-
 <div align="center">
-
-![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
-![Streamlit](https://img.shields.io/badge/streamlit-1.28+-red.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-
-*An interactive analytics dashboard for predicting and preventing customer churn*
-
-[Screenshots](#screenshots) • [Features](#key-features) • [Installation](#quick-start) • [Results](#results)
-
+  <h1>Telco Customer Churn Analytics Dashboard</h1>
+  <p>
+    <img src="https://img.shields.io/badge/python-3.9+-blue.svg" />
+    <img src="https://img.shields.io/badge/streamlit-1.28+-red.svg" />
+    <img src="https://img.shields.io/badge/license-MIT-green.svg" />
+  </p>
+  <em>An interactive analytics dashboard for predicting and preventing customer churn</em>
+  <p>
+    <a href="#demo">Demo</a> • <a href="#key-features">Features</a> • <a href="#quick-start">Installation</a> • <a href="#results">Results</a>
+  </p>
 </div>
+
 
 ---
 
@@ -31,7 +31,7 @@ Built with modern data science tools to demonstrate end-to-end analytics capabil
 
 ---
 
-## Screenshots
+## Demo
 
 ![Dashboard Overview](assets/dashboard_overview.png)
 _Main dashboard showing key metrics: churn rate, high-risk customers, CLTV, revenue at risk, and average tenure. Customer risk distribution with pie chart and probability histogram. Includes top 20 high-risk customers table with actionable intelligence._
@@ -47,6 +47,8 @@ _Confusion matrix, ROC curve, and detailed performance metrics_
 
 ![Business Recommendations](assets/business_recommendations.png)
 _Data-driven retention strategies with financial impact analysis, prioritized action plan, and timeline for execution._
+
+**Live Demo:** [https://telco-ml-churn-dashboard.streamlit.app]
 
 ---
 
